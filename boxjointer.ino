@@ -17,6 +17,12 @@ uint16_t TS_LEFT = 920;
 uint16_t TS_RT  = 150;
 uint16_t TS_TOP = 940;
 uint16_t TS_BOT = 120;
+
+short TS_MINX=150;
+short TS_MINY=120;
+short TS_MAXX=920;
+short TS_MAXY=940;
+
 char *name = "Unknown controller";
 
 // For better pressure precision, we need to know the resistance
@@ -130,15 +136,40 @@ void showOverview() {
 
   buttons[0].drawButton();
   buttons[1].drawButton();
+
+  int result = waitForButtonPress(buttons);
+  
 }
 
 void loop() {
   waitForTouch();
-  tft.print(F("."));
   delay(200);
 }
 
-void waitForTouch() {
+int waitForButtonPress(Adafruit_GFX_Button * buttons) {
+  while(1) {
+    TSPoint p = waitForTouch();
+
+    for (int i = 0; i < sizeof(buttons); ++i) {
+      uint16_t mappedX = mapXValue(p);
+      uint16_t mappedY = mapYValue(p);
+      
+      if (buttons[i].contains(mappedX, mappedY)) {
+        return i;
+      }
+    }
+  }
+}
+
+uint16_t mapXValue(TSPoint & p) {
+  return map(p.x, TS_MAXX, TS_MINX, 0, tft.width());
+}
+
+uint16_t mapYValue(TSPoint &p) {
+  return map(p.y, TS_MINY, TS_MAXY, 0, tft.height());
+}
+
+TSPoint waitForTouch() {
   // a point object holds x y and z coordinates
   
   while(1) {
@@ -153,7 +184,7 @@ void waitForTouch() {
        Serial.print("X = "); Serial.print(p.x);
        Serial.print("\tY = "); Serial.print(p.y);
        Serial.print("\tPressure = "); Serial.println(p.z);
-       break;
+       return p;
     }
   }
 }
