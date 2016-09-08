@@ -4,6 +4,7 @@
 #include <MCUFRIEND_kbv.h>
 MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
 #include <TouchScreen.h>
+#include <math.h>
 
 // most mcufriend shields use these pins and Portrait mode:
 uint8_t YP = A1;  // must be an analog pin, use "An" notation!
@@ -66,11 +67,11 @@ void setup() {
   tft.setRotation(Orientation);
   tft.setTextColor(BLACK);
   showWelcome();
-  showOverview();
 }
 
 void clearScreen() {
   tft.fillScreen(WHITE);
+  tft.setTextColor(BLACK);
 }
 
 void showWelcome() {
@@ -103,10 +104,10 @@ void printText(const __FlashStringHelper * text, int x, int y, int size) {
   tft.print(text);
 }
 
-void showOverview() {
+int showOverview() {
   clearScreen();
- 
-  printText(F("Einstellungen"), 5, 5, 3);
+  
+  printText(F("BoxJointer"), 5, 5, 3);
 
   int secondColX = 200;
   int curRow = 50;
@@ -137,13 +138,67 @@ void showOverview() {
   buttons[0].drawButton();
   buttons[1].drawButton();
 
-  int result = waitForButtonPress(buttons);
-  
+  return waitForButtonPress(buttons);
 }
 
 void loop() {
-  waitForTouch();
-  delay(200);
+  int result = showOverview();
+
+  if (result == 0) {
+    showSetup();
+  } else if (result == 1) {
+    startJoint();
+  }
+}
+
+void showSetup() {
+  clearScreen();
+  
+  printText(F("Blattbreite"), 5, 5, 3);
+
+  renderCentered(bladeWidth, 130, 3);
+  
+  Adafruit_GFX_Button buttons[4];
+  buttons[0].initButton(&tft, 40, 140, 70, 70, BLACK, BLUE, WHITE, "-", 4);
+  buttons[1].initButton(&tft, 280, 140, 70, 70, BLACK, BLUE, WHITE, "+", 4);
+  buttons[2].initButton(&tft, 80, 210, 150, 50, BLACK, RED, WHITE, "Abbrechen", 2);
+  buttons[3].initButton(&tft, 240, 210, 150, 50, BLACK, RED, WHITE, "OK", 2);
+ 
+  drawButtons(buttons);
+
+  waitForButtonPress(buttons);
+}
+
+void prepareCursorForCenteredText(int numChars, int y, int fontSize) {
+  int width = 5 * numChars * fontSize;
+  int startX = (tft.width() - width) / 2;
+  Serial.print("width="); Serial.print(width);
+  Serial.print(" startX="); Serial.print(startX);
+  Serial.println();
+
+  setupText(startX, y, fontSize);
+}
+
+void renderCentered(int number, int y, int fontSize) {
+  String formated = String(number);
+  renderCentered(formated, y, fontSize);
+}
+
+void renderCentered(String text, int y, int fontSize) {
+  int size = text.length();
+  prepareCursorForCenteredText(size, y, fontSize);
+  
+  tft.print(text);
+}
+
+void drawButtons(Adafruit_GFX_Button * buttons) {
+  for (int i = 0; i < sizeof(buttons); ++i) {
+    buttons[i].drawButton();
+  }
+}
+
+void startJoint() {
+  
 }
 
 int waitForButtonPress(Adafruit_GFX_Button * buttons) {
