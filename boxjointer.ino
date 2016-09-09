@@ -8,6 +8,8 @@ MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
 #include <EEPROM.h>
 #include <Stepper.h>
 
+
+/* Params for Screen */
 // most mcufriend shields use these pins and Portrait mode:
 uint8_t YP = A1;  // must be an analog pin, use "An" notation!
 uint8_t XM = A2;  // must be an analog pin, use "An" notation!
@@ -15,35 +17,31 @@ uint8_t YM = 7;   // can be a digital pin
 uint8_t XP = 6;   // can be a digital pin
 uint8_t SwapXY = 0;
 
+const short TS_MINX=150;
+const short TS_MINY=120;
+const short TS_MAXX=920;
+const short TS_MAXY=940;
 
-uint16_t TS_LEFT = 920;
-uint16_t TS_RT  = 150;
-uint16_t TS_TOP = 940;
-uint16_t TS_BOT = 120;
-
-short TS_MINX=150;
-short TS_MINY=120;
-short TS_MAXX=920;
-short TS_MAXY=940;
-
-char *name = "Unknown controller";
-
-// For better pressure precision, we need to know the resistance
-// between X+ and X- Use any multimeter to read it
-// For the one we're using, its 300 ohms across the X plate
-TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
-TSPoint tp;
-
-#define MINPRESSURE 20
-#define MAXPRESSURE 1000
+const uint16_t MINPRESSURE = 20;
+const uint16_t MAXPRESSURE = 1000;
 
 #define SWAP(a, b) {uint16_t tmp = a; a = b; b = tmp;}
 
-int16_t BOXSIZE;
-int16_t PENRADIUS = 3;
-uint16_t identifier, oldcolor, currentcolor;
-uint8_t Orientation = 1;    //PORTRAIT
+const uint8_t Orientation = 1;    //PORTRAIT
 
+// Assign human-readable names to some common 16-bit color values:
+const uint16_t BLACK = 0x0000;
+const uint16_t BLUE = 0x001F;
+const uint16_t RED = 0xF800;
+const uint16_t GREEN = 0x07E0;
+const uint16_t CYAN = 0x07FF;
+const uint16_t MAGENTA = 0xF81F;
+const uint16_t YELLOW = 0xFFE0;
+const uint16_t WHITE = 0xFFFF;
+
+
+
+/* Init. Params for UI */
 const long maxBladeWidth = 500;
 const long maxGlueWidth = 100;
 const long maxWoodWidth = 3000;
@@ -54,15 +52,14 @@ const int cutWidthDigits = 2;
 const int glueWidthDigits = 2;
 const int woodWidthDigits = 0;
 
-// Assign human-readable names to some common 16-bit color values:
-#define BLACK   0x0000
-#define BLUE    0x001F
-#define RED     0xF800
-#define GREEN   0x07E0
-#define CYAN    0x07FF
-#define MAGENTA 0xF81F
-#define YELLOW  0xFFE0
-#define WHITE   0xFFFF
+
+/* Variables */ 
+
+// For better pressure precision, we need to know the resistance
+// between X+ and X- Use any multimeter to read it
+// For the one we're using, its 300 ohms across the X plate
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
+TSPoint tp;
 
 int16_t bladeWidth = 280;
 int16_t cutWidth = 500;
@@ -70,9 +67,6 @@ int16_t glueWidth = 10;
 int16_t woodWidth = 1000;
 
 void setup() {
-  TS_LEFT = 893; TS_RT = 145; TS_TOP = 930; TS_BOT = 135;
-  SwapXY = 1;
-
   bladeWidth = readEepromWithDefault(0, bladeWidth);
   cutWidth = readEepromWithDefault(4, cutWidth);
   glueWidth = readEepromWithDefault(8, glueWidth);
@@ -180,7 +174,7 @@ void showSetup() {
     return;
   }
   
-  int cutWidthResult = readNumberInput(F("Zinkenbreite"), cutWidth, 0, maxCutWidth, cutWidthDigits, 5, 10);
+  int cutWidthResult = readNumberInput(F("Zinkenbreite"), cutWidth, 0, maxCutWidth, cutWidthDigits, 5, 50);
   if (cutWidthResult < 0) {
     return;
   }
@@ -224,6 +218,8 @@ long readNumberInput(const __FlashStringHelper * header, long value, long minVal
   drawButtons(buttons, 4);
 
   tft.setTextColor(BLACK, WHITE);
+
+  renderCentered(F("mm"), 120, 2);
 
   const int delayTime = 100;
   long lastTouch = millis();
@@ -269,7 +265,7 @@ long readNumberInput(const __FlashStringHelper * header, long value, long minVal
 }
 
 void renderInputNumber(int number, int y, int fontSize, int fractionDigits) {
-  tft.fillRect(80, 65, 160, 70, WHITE);
+  tft.fillRect(80, 65, 160, 50, WHITE);
   
   float numberToDisplay = (float) number;
   for (int i = 0; i < fractionDigits; ++i) {
