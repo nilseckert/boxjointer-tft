@@ -5,6 +5,7 @@
 MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
 #include <TouchScreen.h>
 #include <math.h>
+#include <EEPROM.h>
 
 // most mcufriend shields use these pins and Portrait mode:
 uint8_t YP = A1;  // must be an analog pin, use "An" notation!
@@ -42,10 +43,15 @@ int16_t PENRADIUS = 3;
 uint16_t identifier, oldcolor, currentcolor;
 uint8_t Orientation = 1;    //PORTRAIT
 
-int woodWidth = 2000;
-int bladeWidth = 280;
-int cutWidth = 500;
-int glueWidth = 10;
+const long maxBladeWidth = 500;
+const long maxGlueWidth = 100;
+const long maxWoodWidth = 3000;
+const long maxCutWidth = 3000;
+
+const int bladeWidthDigits = 2;
+const int cutWidthDigits = 2;
+const int glueWidthDigits = 2;
+const int woodWidthDigits = 0;
 
 // Assign human-readable names to some common 16-bit color values:
 #define BLACK   0x0000
@@ -57,9 +63,19 @@ int glueWidth = 10;
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
 
+int16_t bladeWidth = 280;
+int16_t cutWidth = 500;
+int16_t glueWidth = 10;
+int16_t woodWidth = 1000;
+
 void setup() {
   TS_LEFT = 893; TS_RT = 145; TS_TOP = 930; TS_BOT = 135;
   SwapXY = 1;
+
+  bladeWidth = readEepromWithDefault(0, bladeWidth);
+  cutWidth = readEepromWithDefault(4, cutWidth);
+  glueWidth = readEepromWithDefault(8, glueWidth);
+  woodWidth = readEepromWithDefault(12, woodWidth);
 
   Serial.begin(9600);
   ts = TouchScreen(XP, YP, XM, YM, 300);
@@ -67,6 +83,12 @@ void setup() {
   tft.setRotation(Orientation);
   tft.setTextColor(BLACK);
   showWelcome();
+}
+
+long readEepromWithDefault(int address, long defaultValue) {
+  int value = EEPROMReadlong(address);
+
+  return value != -1 ? value : defaultValue;
 }
 
 void clearScreen() {
@@ -117,7 +139,7 @@ int showOverview() {
   printText(bladeWidth, secondColX,curRow,2);
   curRow += rowHeight;
   
-  printText(F("Schnittbreite"), 5, curRow, 2);
+  printText(F("Zinkenbreite"), 5, curRow, 2);
   printText(cutWidth, secondColX,curRow,2);
   curRow += rowHeight;
 
@@ -128,17 +150,17 @@ int showOverview() {
   printText(F("Holzbreite"), 5, curRow, 2);
   printText(woodWidth, secondColX,curRow,2);
 
-  Adafruit_GFX_Button buttons[2];
+  int buttonsSize = 2;
+  Adafruit_GFX_Button buttons[buttonsSize];
 
-  int buttonsY = 210; 
+  const int buttonsY = 210; 
 
   buttons[0].initButton(&tft, 80, buttonsY, 150, 50, BLACK, RED, WHITE, "Anpassen", 2);
   buttons[1].initButton(&tft, 240, buttonsY, 150, 50, BLACK, RED, WHITE, "Start", 2);
 
-  buttons[0].drawButton();
-  buttons[1].drawButton();
+  drawButtons(buttons, buttonsSize);
 
-  return waitForButtonPress(buttons);
+  return waitForButtonPress(buttons, buttonsSize);
 }
 
 void loop() {
@@ -152,36 +174,94 @@ void loop() {
 }
 
 void showSetup() {
+  int bladeWidthResult = readNumberInput(F("Blattbreite"), bladeWidth, 0, maxBladeWidth, bladeWidthDigits, 1);
+  if (bladeWidthResult < 0) {
+    return;
+  }
+  
+  int cutWidthResult = readNumberInput(F("Zinkenbreite"), cutWidth, 0, maxCutWidth, cutWidthDigits, 5);
+  if (cutWidthResult < 0) {
+    return;
+  }
+
+  int glueWidthResult = readNumberInput(F("Leimzugabe"), glueWidth, 0, maxGlueWidth, 2, 1);
+  if (glueWidthResult < 0) {
+    return;
+  }
+
+  int woodWidthResult = readNumberInput(F("Holzbreite"), woodWidth, 0, maxWoodWidth, 1, 5);
+  if (woodWidthResult < 0) {
+    return; 
+  }
+
+  bladeWidth = bladeWidthResult;
+  cutWidth = cutWidthResult;
+  glueWidth = glueWidthResult;
+  woodWidth = woodWidthResult;
+
+  EEPROMWritelong(0, bladeWidth);
+  EEPROMWritelong(4, cutWidth);
+  EEPROMWritelong(8, glueWidth);
+  EEPROMWritelong(12, woodWidth);
+  
+  waitForTouch();
+}
+
+long readNumberInput(const __FlashStringHelper * header, long value, long minValue, long maxValue, int fractionDigits, int increment) {
   clearScreen();
   
-  printText(F("Blattbreite"), 5, 5, 3);
+  printText(header, 5, 5, 3);
 
-  renderCentered(bladeWidth, 130, 3);
+  renderInputNumber(value, 90, 3, fractionDigits);
   
   Adafruit_GFX_Button buttons[4];
-  buttons[0].initButton(&tft, 40, 140, 70, 70, BLACK, BLUE, WHITE, "-", 4);
-  buttons[1].initButton(&tft, 280, 140, 70, 70, BLACK, BLUE, WHITE, "+", 4);
+  buttons[0].initButton(&tft, 40, 100, 70, 70, BLACK, BLUE, WHITE, "-", 4);
+  buttons[1].initButton(&tft, 280, 100, 70, 70, BLACK, BLUE, WHITE, "+", 4);
   buttons[2].initButton(&tft, 80, 210, 150, 50, BLACK, RED, WHITE, "Abbrechen", 2);
   buttons[3].initButton(&tft, 240, 210, 150, 50, BLACK, RED, WHITE, "OK", 2);
  
-  drawButtons(buttons);
+  drawButtons(buttons, 4);
 
-  waitForButtonPress(buttons);
+  tft.setTextColor(BLACK, WHITE);
+  
+  while (1) {
+    int button = waitForButtonPress(buttons, 4);
+    
+    if (button == 0) {
+      value = max(minValue, value - increment);
+      renderInputNumber(value, 90, 3, fractionDigits);
+      Serial.print("decrement value="); Serial.println(value);
+      delay(100);
+    } else if (button == 1) {
+      value = min(maxValue, value + increment);
+      renderInputNumber(value, 90, 3, fractionDigits);
+      Serial.print("decrement value="); Serial.println(value);
+      delay(100);
+    } else if (button == 2) {
+      return -1;
+    } else {
+      return value;
+    }
+  }
+}
+
+void renderInputNumber(int number, int y, int fontSize, int fractionDigits) {
+  tft.fillRect(80, 65, 160, 70, WHITE);
+  
+  float numberToDisplay = (float) number;
+  for (int i = 0; i < fractionDigits; ++i) {
+      numberToDisplay = numberToDisplay / 10;
+  }
+  
+  String formated = String(numberToDisplay, fractionDigits);
+  renderCentered(formated, y, fontSize);
 }
 
 void prepareCursorForCenteredText(int numChars, int y, int fontSize) {
   int width = 5 * numChars * fontSize;
   int startX = (tft.width() - width) / 2;
-  Serial.print("width="); Serial.print(width);
-  Serial.print(" startX="); Serial.print(startX);
-  Serial.println();
 
   setupText(startX, y, fontSize);
-}
-
-void renderCentered(int number, int y, int fontSize) {
-  String formated = String(number);
-  renderCentered(formated, y, fontSize);
 }
 
 void renderCentered(String text, int y, int fontSize) {
@@ -191,21 +271,21 @@ void renderCentered(String text, int y, int fontSize) {
   tft.print(text);
 }
 
-void drawButtons(Adafruit_GFX_Button * buttons) {
-  for (int i = 0; i < sizeof(buttons); ++i) {
-    buttons[i].drawButton();
-  }
-}
-
 void startJoint() {
   
 }
 
-int waitForButtonPress(Adafruit_GFX_Button * buttons) {
+void drawButtons(Adafruit_GFX_Button * buttons, int number) {
+  for (int i = 0; i < number; ++i) {
+    buttons[i].drawButton();
+    }
+}
+
+int waitForButtonPress(Adafruit_GFX_Button * buttons, int numberOfButtons) {
   while(1) {
     TSPoint p = waitForTouch();
-
-    for (int i = 0; i < sizeof(buttons); ++i) {
+       
+    for (int i = 0; i < numberOfButtons; ++i) {
       uint16_t mappedX = mapXValue(p);
       uint16_t mappedY = mapYValue(p);
       
@@ -242,5 +322,31 @@ TSPoint waitForTouch() {
        return p;
     }
   }
+}
+
+void EEPROMWritelong(int address, long value) {
+  //Decomposition from a long to 4 bytes by using bitshift.
+  //One = Most significant -> Four = Least significant byte
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
+  
+  //Write the 4 bytes into the eeprom memory.
+  EEPROM.update(address, four);
+  EEPROM.update(address + 1, three);
+  EEPROM.update(address + 2, two);
+  EEPROM.update(address + 3, one);
+}
+
+long EEPROMReadlong(long address) {
+  //Read the 4 bytes from the eeprom memory.
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
+
+  //Return the recomposed long by using bitshift.
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
 }
 
