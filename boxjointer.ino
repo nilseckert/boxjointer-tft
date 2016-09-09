@@ -6,6 +6,7 @@ MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
 #include <TouchScreen.h>
 #include <math.h>
 #include <EEPROM.h>
+#include <Stepper.h>
 
 // most mcufriend shields use these pins and Portrait mode:
 uint8_t YP = A1;  // must be an analog pin, use "An" notation!
@@ -174,22 +175,22 @@ void loop() {
 }
 
 void showSetup() {
-  int bladeWidthResult = readNumberInput(F("Blattbreite"), bladeWidth, 0, maxBladeWidth, bladeWidthDigits, 1);
+  int bladeWidthResult = readNumberInput(F("Blattbreite"), bladeWidth, 0, maxBladeWidth, bladeWidthDigits, 1, 10);
   if (bladeWidthResult < 0) {
     return;
   }
   
-  int cutWidthResult = readNumberInput(F("Zinkenbreite"), cutWidth, 0, maxCutWidth, cutWidthDigits, 5);
+  int cutWidthResult = readNumberInput(F("Zinkenbreite"), cutWidth, 0, maxCutWidth, cutWidthDigits, 5, 10);
   if (cutWidthResult < 0) {
     return;
   }
 
-  int glueWidthResult = readNumberInput(F("Leimzugabe"), glueWidth, 0, maxGlueWidth, 2, 1);
+  int glueWidthResult = readNumberInput(F("Leimzugabe"), glueWidth, 0, maxGlueWidth, 2, 1, 10);
   if (glueWidthResult < 0) {
     return;
   }
 
-  int woodWidthResult = readNumberInput(F("Holzbreite"), woodWidth, 0, maxWoodWidth, 1, 5);
+  int woodWidthResult = readNumberInput(F("Holzbreite"), woodWidth, 0, maxWoodWidth, 1, 5, 100);
   if (woodWidthResult < 0) {
     return; 
   }
@@ -207,7 +208,7 @@ void showSetup() {
   waitForTouch();
 }
 
-long readNumberInput(const __FlashStringHelper * header, long value, long minValue, long maxValue, int fractionDigits, int increment) {
+long readNumberInput(const __FlashStringHelper * header, long value, long minValue, long maxValue, int fractionDigits, int slowIncrement, int fastIncrement) {
   clearScreen();
   
   printText(header, 5, 5, 3);
@@ -223,26 +224,48 @@ long readNumberInput(const __FlashStringHelper * header, long value, long minVal
   drawButtons(buttons, 4);
 
   tft.setTextColor(BLACK, WHITE);
+
+  const int delayTime = 100;
+  long lastTouch = millis();
+  int continuousTouchCount = 0;
   
   while (1) {
     int button = waitForButtonPress(buttons, 4);
-    
+
+    long thisTouch = millis();
+    long diffTouch = thisTouch - lastTouch;
+
+    Serial.print("TimeSinceLastTouch=");
+    Serial.println(diffTouch);
+    if (diffTouch < 50) {
+      Serial.println("Continuous Touch detected");
+      continuousTouchCount++;
+    } else {
+      Serial.println("Reset Cont. Touch Count");
+      continuousTouchCount = 0;
+    }
+
+    int currentIncrement = (continuousTouchCount > 5 && value % fastIncrement == 0) ? fastIncrement : slowIncrement;
+   
     if (button == 0) {
-      value = max(minValue, value - increment);
+      value = max(minValue, value - currentIncrement);
       renderInputNumber(value, 90, 3, fractionDigits);
       Serial.print("decrement value="); Serial.println(value);
-      delay(100);
+      delay(delayTime);
     } else if (button == 1) {
-      value = min(maxValue, value + increment);
+      value = min(maxValue, value + currentIncrement);
       renderInputNumber(value, 90, 3, fractionDigits);
       Serial.print("decrement value="); Serial.println(value);
-      delay(100);
+      delay(delayTime);
     } else if (button == 2) {
       return -1;
     } else {
       return value;
     }
+
+    lastTouch = millis();
   }
+  
 }
 
 void renderInputNumber(int number, int y, int fontSize, int fractionDigits) {
