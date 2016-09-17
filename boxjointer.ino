@@ -125,7 +125,7 @@ void showWelcome() {
 
   printText(F("BoxJointer"), 5, 5, 5);
 
-  printText(F("Release: v1.0"), 5, 80, 2);
+  printText(F("Release: v1.0.1"), 5, 80, 2);
 
   printText(F("Kalibriere Schlitten"), 5, 200, 1);
 }
@@ -149,7 +149,7 @@ void startJoint() {
   
   int additionalCuts = ceil(remainingCutWidth / maxFollowupCutWidth);
   float additionalCutWidth = remainingCutWidth / (float) additionalCuts;
-  int totalCuts = ceil(woodWidth / (cutWidth * 2.0f + glueWidth));
+  int totalCuts = ceil(woodWidth / (cutWidth * 2.0f));
   
   Serial.print(F("remainingCutWidth="));
   Serial.print(remainingCutWidth);
@@ -178,16 +178,18 @@ void startJoint() {
   } else {
     nextPosition -= toothGlueWidth;
   }
-
+  
+  int cutsPerJoint = (1 + additionalCuts);
+  
   int step = 0;
-  for (int i = 1; i <= totalCuts; ++i) {
+  for (int i = 0; i < totalCuts; ++i) {
     // do cut
-    for (int j = 0; j <= additionalCuts; ++j) {
+    for (int j = 0; j < cutsPerJoint; ++j) {
       long nextPartialCut = j * additionalCutWidth;
       Serial.print(F("nextPartialCut="));
       Serial.println(nextPartialCut);
       
-      gotoNextCutPositionWithDialog(nextPosition + nextPartialCut);
+      gotoNextCutPositionWithDialog(nextPosition + nextPartialCut, i, totalCuts, j, cutsPerJoint);
     }
     
     nextPosition = nextPosition + cutWidth + cutWidth;
@@ -199,26 +201,42 @@ void startJoint() {
   tft.fillScreen(WHITE);
   tft.setTextColor(BLACK);
   renderCentered("FERTIG!", 100, 3);
-  renderCentered("Tippen: Auf Start", 200, 2);
+  renderCentered("Weiter mit Tippen", 200, 2);
   waitForTouch();
 
   showInProgress();
   runToMmPositionWithinLimits(offsetZeroPosition);
 }
 
-void gotoNextCutPositionWithDialog(long positionMm) {
+void gotoNextCutPositionWithDialog(long positionMm, int cutNumber, int totalCuts, int partCutNumber, int cutsPerJoint) {
   showInProgress();
   runToMmPositionWithinLimits(positionMm + offsetZeroPosition);
   showDoCut();
-  String text = formatNumber(positionMm, 2);
-  text = String("Pos: " + text + " mm");
+
+  tft.setTextColor(WHITE);
+
+  String text = String("Zinken " + String(cutNumber + 1) + " von " + String(totalCuts));
+  renderCentered(text, 30, 3);
+
+  text = String("Teil " + String(partCutNumber + 1) + " von " + String(cutsPerJoint));
+  renderCentered(text, 80, 2);
   
-  renderCentered(text, 100, 3);
+  text = String("Pos: " + formatNumber(positionMm, 2) + " mm");
+  renderCentered(text, 120, 1);
+
+  int cutsRequiredAtAll = cutsPerJoint * totalCuts;
+  int cutsDone = cutNumber * cutsPerJoint + (partCutNumber + 1);
+  float progress = cutsDone * 100.0f / cutsRequiredAtAll;
+  text = String("Gesamt: " + String(cutsDone) + " / " + String(cutsRequiredAtAll) + " (" + String(progress, 1) + "%)");
+  renderCentered(text, 150, 2);
+
+  renderCentered("Weiter mit Tippen", 200, 2);
   
   waitForTouch();
 }
 
 void showInProgress() {
+  tft.setTextColor(WHITE);
   tft.fillScreen(RED);
   renderCentered("Bitte warten...", 100, 3);
 }
@@ -370,7 +388,7 @@ void showSetup() {
     return;
   }
 
-  int woodWidthResult = readNumberInput(F("Holzbreite"), woodWidth, 0, maxWoodWidth, 1, 50, 1000);
+  int woodWidthResult = readNumberInput(F("Holzbreite"), woodWidth, 0, maxWoodWidth, 1, 50, 500);
   if (woodWidthResult < 0) {
     Serial.println(F("Aborting setup at woodwidth"));
     return;
@@ -450,6 +468,7 @@ long readNumberInput(const __FlashStringHelper * header, long value, long minVal
       renderInputNumber(value, 90, 3, fractionDigits);
       delay(delayTime);
     } else if (button == 1) {
+      delay(delayTime);
       value = min(maxValue, value + currentIncrement);
       renderInputNumber(value, 90, 3, fractionDigits);
       delay(delayTime);
@@ -476,7 +495,7 @@ String formatNumber(int number, int fractionDigits) {
 }
 
 void prepareCursorForCenteredText(int numChars, int y, int fontSize) {
-  int width = 5 * numChars * fontSize;
+  int width = 5 * numChars * fontSize + (numChars - 1) * fontSize;
   int startX = (tft.width() - width) / 2;
 
   setupText(startX, y, fontSize);
