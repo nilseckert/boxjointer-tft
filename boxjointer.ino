@@ -2,7 +2,6 @@
 //#include <Adafruit_TFTLCD.h> // Hardware-specific library
 //Adafruit_TFTLCD tft(A3, A2, A1, A0, A4);
 #include <MCUFRIEND_kbv.h>
-MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
 #include <TouchScreen.h>
 #include <math.h>
 #include <EEPROM.h>
@@ -16,17 +15,14 @@ uint8_t YP = A1;  // must be an analog pin, use "An" notation!
 uint8_t XM = A2;  // must be an analog pin, use "An" notation!
 uint8_t YM = 7;   // can be a digital pin
 uint8_t XP = 6;   // can be a digital pin
-uint8_t SwapXY = 0;
 
-const short TS_MINX = 150;
-const short TS_MINY = 120;
-const short TS_MAXX = 920;
-const short TS_MAXY = 940;
+const short TS_LEFT = 930;
+const short TS_RIGHT = 130;
+const short TS_TOP = 150;
+const short TS_BOTTOM = 892;
 
 const uint16_t MINPRESSURE = 20;
 const uint16_t MAXPRESSURE = 1000;
-
-#define SWAP(a, b) {uint16_t tmp = a; a = b; b = tmp;}
 
 const uint8_t Orientation = 1;    //PORTRAIT
 
@@ -66,13 +62,16 @@ const bool dirInverted = true;
 const bool stepInverted = false;
 const bool enableInverted = false;
 
-const uint8_t stepsPerMm = 40;
+const uint8_t stepsPerTurn = 200;
+const uint8_t leadOfThread = 8;
 const uint8_t microSteppingFactor = 4;
+const float correctionFactor = 0.985f;
 
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 
 
 /* Variables */
+MCUFRIEND_kbv tft;       // hard-wired for UNO shields anyway.
 
 // For better pressure precision, we need to know the resistance
 // between X+ and X- Use any multimeter to read it
@@ -126,7 +125,7 @@ void showWelcome() {
 
   printText(F("BoxJointer"), 5, 5, 5);
 
-  printText(F("Release: v1.0.RC1"), 5, 80, 2);
+  printText(F("Release: v1.0"), 5, 80, 2);
 
   printText(F("Kalibriere Schlitten"), 5, 200, 1);
 }
@@ -228,6 +227,9 @@ void showDoCut() {
   tft.fillScreen(GREEN);
 }
 
+/*
+ * long is 1/100 mm
+ */
 void runToMmPositionWithinLimits(long mmPosition) {
   long mappedPosition = mapPosition(mmPosition);
 
@@ -252,11 +254,9 @@ void runToNewPositionWithinLimits(long newPosition) {
       break;
     }
 
-    stepper.run();
-    
-    if (count % 100 == 0) {
+    if (count % 1000 == 0) {
       count = 0;
-      
+           
       if (distToGo > 0) {
         bool endLimitReached = digitalRead(endLimitPin);
 
@@ -264,8 +264,6 @@ void runToNewPositionWithinLimits(long newPosition) {
           break;
         }
       }
-
-      stepper.run();
 
       if (distToGo < 0) {
         bool startLimitReached = digitalRead(startLimitPin);
@@ -512,12 +510,17 @@ int waitForButtonPress(Adafruit_GFX_Button * buttons, int numberOfButtons) {
   }
 }
 
+
 uint16_t mapXValue(TSPoint & p) {
-  return map(p.x, TS_MAXX, TS_MINX, 0, tft.width());
+  uint16_t x = min(p.x, TS_LEFT);
+  x = max(x, TS_RIGHT);
+  return map(x, TS_LEFT, TS_RIGHT, 0, tft.width());
 }
 
 uint16_t mapYValue(TSPoint &p) {
-  return map(p.y, TS_MINY, TS_MAXY, 0, tft.height());
+  uint16_t y = min(TS_BOTTOM, p.y);
+  y = max(TS_TOP, y);
+  return map(y, TS_TOP, TS_BOTTOM, 0, tft.height());
 }
 
 TSPoint waitForTouch() {
@@ -549,26 +552,36 @@ void calibrateStepper() {
     Serial.println(F("Stepper hit startLimit"));
   } else {
     Serial.println(F("Stepper not reaching start limit"));
-    runUntilLimitReachesState(startLimitPin, true, -12000, maxSpeed * microSteppingFactor);
+    runUntilLimitReachesState(startLimitPin, true, -350000, maxSpeed * microSteppingFactor);
   }
-
+  delay(300);
+  
   tft.print(".");
+  
 
   Serial.println(F("Stepper hitting startLimit. Starting fine calibration."));
   runUntilLimitReachesState(startLimitPin, false, 500, 25 * microSteppingFactor);
+
+  delay(300);
   
   stepper.setCurrentPosition(0);
   
   tft.print(".");
+  
   stepper.setMaxSpeed(maxSpeed * microSteppingFactor);
   
   runToMmPositionWithinLimits(offsetZeroPosition);
   
-  tft.print(".");  
+  tft.print(".");
+
+  delay(500);
 }
 
+/*
+ * long is 1/100 mm
+ */
 long mapPosition(long position) {
-  long result = position * stepsPerMm  * microSteppingFactor / 100;
+  long result = position * stepsPerTurn / leadOfThread * microSteppingFactor / 100 * correctionFactor;
   return result;
 }
 
